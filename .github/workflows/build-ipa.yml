@@ -1,0 +1,132 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+
+env:
+  LLAMA_TAG: 42d958167a748f2c04b1f888e84e7a58f609ddcb
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode and iOS SDK (Liquid Glass needs the iOS 26 SDK)
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i "ios" || true
+
+      - name: Cache llama.cpp (iOS static libs)
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor-llama
+          key: llama-ios-${{ env.LLAMA_TAG }}-metal3
+
+      - name: Build llama.cpp for iOS
+        if: steps.llama-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git init llama-src
+          cd llama-src
+          git remote add origin https://github.com/ggml-org/llama.cpp
+          git fetch --depth 1 origin "$LLAMA_TAG"
+          git checkout FETCH_HEAD
+          cmake -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_CURL=OFF \
+            -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_ACCELERATE=ON
+          cmake --build build-ios --config Release --target mtmd --target llama --target vendor-hash -j 4
+          mkdir -p ../vendor-llama/include ../vendor-llama/lib
+          cp include/llama.h ../vendor-llama/include/
+          cp tools/mtmd/mtmd.h tools/mtmd/mtmd-helper.h ../vendor-llama/include/
+          cp ggml/include/*.h ../vendor-llama/include/
+          cp build-ios/src/Release-iphoneos/*.a ../vendor-llama/lib/ || true
+          cp build-ios/ggml/src/Release-iphoneos/*.a ../vendor-llama/lib/ || true
+          cp build-ios/tools/mtmd/Release-iphoneos/*.a ../vendor-llama/lib/ || true
+          find build-ios -name "*.a" -exec cp {} ../vendor-llama/lib/ \; || true
+          echo "--- headers ---"; ls ../vendor-llama/include
+          echo "--- libs ---"; ls -la ../vendor-llama/lib
+          echo "--- all built archives ---"; find build-ios -name "*.a" | head -30
+
+      - name: Inject local config from secrets
+        run: |
+          set -euo pipefail
+          cat > Sources/LocalConfig.swift <<'SWIFT'
+          import Foundation
+
+          /// Generated at build time on CI from repository secrets. Never committed.
+          enum LocalConfig {
+              static let server = "__SERVER__"
+              static let tailnetIP = "__TAILNET_IP__"
+              static let lanIP = "__LAN_IP__"
+              static let token = "__TOKEN__"
+          }
+          SWIFT
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path("Sources/LocalConfig.swift")
+          text = p.read_text()
+          text = text.replace("__SERVER__", os.environ.get("CF_SERVER", ""))
+          text = text.replace("__TAILNET_IP__", os.environ.get("CF_TAILNET_IP", ""))
+          text = text.replace("__LAN_IP__", os.environ.get("CF_LAN_IP", ""))
+          text = text.replace("__TOKEN__", os.environ.get("CF_TOKEN", ""))
+          p.write_text(text)
+          print("LocalConfig.swift written:", len(text), "bytes")
+          PY
+          grep -c "static let" Sources/LocalConfig.swift
+        env:
+          CF_SERVER: ${{ secrets.COMFYPHONE_SERVER }}
+          CF_TAILNET_IP: ${{ secrets.COMFYPHONE_TAILNET_IP }}
+          CF_LAN_IP: ${{ secrets.COMFYPHONE_LAN_IP }}
+          CF_TOKEN: ${{ secrets.COMFYPHONE_TOKEN }}
+
+      - name: Install XcodeGen
+        run: brew install xcodegen || brew upgrade xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build app (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ComfyPhone.xcodeproj \
+            -scheme ComfyPhone \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            ENABLE_DEBUG_DYLIB=NO ENABLE_PREVIEWS=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          echo "App: $APP"
+          test -n "$APP"
+          plutil -p "$APP/Info.plist" | head -40
+          test -f "$APP/AppIcon60x60@2x.png" || echo "no icon (not fatal)"
+          rm -rf Payload ComfyPhone-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry ComfyPhone-unsigned.ipa Payload
+          unzip -l ComfyPhone-unsigned.ipa | head -20
+          ls -l ComfyPhone-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: comfyphone-ipa
+          path: ComfyPhone-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 1

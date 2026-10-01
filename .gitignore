@@ -1,0 +1,9 @@
+build/
+dist/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+.DS_Store
+vendor-llama/
+llama-src/
+Sources/LocalConfig.swift

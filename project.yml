@@ -1,0 +1,62 @@
+name: ComfyPhone
+options:
+  bundleIdPrefix: com.neo664evr
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+targets:
+  ComfyPhone:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: ComfyPhone
+        CFBundleName: ComfyPhone
+        CFBundleShortVersionString: "6.0"
+        CFBundleVersion: "15"
+        ITSAppUsesNonExemptEncryption: false
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.neo664evr.gguf-model
+            UTTypeDescription: AI model file
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: ["gguf", "ggml", "ggmf", "bin"]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSupportsIndirectInputEvents: true
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIRequiresFullScreen: false
+        NSPhotoLibraryUsageDescription: Pick a picture to look at on the PC's gallery.
+        NSPhotoLibraryAddUsageDescription: Save images the PC generated to your photo library.
+        NSLocalNetworkUsageDescription: Talk to your PC's ComfyUI image engine on your home network.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSExceptionDomains: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neo664evr.comfyphone
+        PRODUCT_NAME: ComfyPhone
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/ComfyPhone-Bridging-Header.h
+        HEADER_SEARCH_PATHS: $(SRCROOT)/vendor-llama/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/vendor-llama/lib
+        OTHER_LDFLAGS: -lllama -lmtmd -lvendor-hash -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lc++ -framework Metal -framework MetalKit -framework Accelerate -framework Foundation -framework CoreFoundation
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CURRENT_PROJECT_VERSION: "15"
+        MARKETING_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"

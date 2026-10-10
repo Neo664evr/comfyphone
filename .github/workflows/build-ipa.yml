@@ -22,6 +22,8 @@ jobs:
         run: |
           swiftc Sources/DiffusionPolicy.swift Tests/DiffusionPolicyTests.swift -o "$RUNNER_TEMP/diffusion-tests"
           "$RUNNER_TEMP/diffusion-tests"
+          swiftc Sources/DiffusionFiles.swift Tests/DiffusionFileTests.swift -o "$RUNNER_TEMP/component-tests"
+          "$RUNNER_TEMP/component-tests"
 
       - name: Cache llama.cpp (iOS static libs)
         id: llama-cache
@@ -67,7 +69,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor-diffusion
-          key: diffusion-ios-0e1d733-d25b121-bridge1
+          key: diffusion-ios-0e1d733-d25b121-${{ hashFiles('Native/**', 'scripts/build-diffusion.sh') }}
 
       - name: Build native diffusion framework
         if: steps.diffusion-cache.outputs.cache-hit != 'true'

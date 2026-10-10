@@ -113,7 +113,10 @@ final class LocalAI: ObservableObject {
         let files = (try? FileManager.default.contentsOfDirectory(at: dir,
                                                                   includingPropertiesForKeys: [.fileSizeKey],
                                                                   options: [.skipsHiddenFiles])) ?? []
-        models = files.filter { $0.pathExtension.lowercased() == "gguf" }
+        models = files.filter { url in
+                guard url.pathExtension.lowercased() == "gguf", let info = try? GGUFInspection.read(url) else { return false }
+                return info.isLanguageModel || (url.lastPathComponent.lowercased().contains("mmproj") && info.architecture == "clip")
+            }
             .map { url in
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 return LocalModelFile(name: url.lastPathComponent, bytes: Int64(size))
@@ -141,6 +144,17 @@ final class LocalAI: ObservableObject {
         let name = url.lastPathComponent
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let info = try GGUFInspection.read(url)
+            let projector = name.lowercased().contains("mmproj") && info.architecture == "clip"
+            guard info.isLanguageModel || projector else {
+                status = "Image diffusion weights are not chat models. Choose them in Create → On iPhone → Turbo image denoiser."
+                return
+            }
+        } catch {
+            status = "Not a supported chat/projector GGUF: \(error.localizedDescription)"
+            return
+        }
         let dest = Self.modelsDir.appendingPathComponent(name)
         importing = name
         importProgress = 0
@@ -224,10 +238,22 @@ final class LocalAI: ObservableObject {
     // MARK: - lifecycle
 
     func load() async {
+        guard !working else { return }
+        guard !OnDeviceDiffusion.shared.busy && !OnDeviceDiffusion.shared.loaded else {
+            status = "Unload the image runtime in Create → On iPhone before loading chat/vision."
+            return
+        }
         guard let name = selected else {
             status = "Pick a model first."
             return
         }
+        do {
+            let info = try GGUFInspection.read(path(for: name))
+            guard info.isLanguageModel else {
+                status = "This file is not a chat model. Import image components in Create → On iPhone."
+                return
+            }
+        } catch { status = "Invalid chat model: \(error.localizedDescription)"; return }
         guard loaded != name || usedSettings != settings else { return }
         unload()
         working = true

@@ -17,10 +17,11 @@ struct ComfyPhoneApp: App {
 struct RootView: View {
     @EnvironmentObject private var app: AppState
     @State private var tab = 0
+    @AppStorage("generationDestination") private var destination = "iphone"
 
     var body: some View {
         TabView(selection: $tab) {
-            CreateView()
+            CreateDestinationView()
                 .tabItem { Label("Create", systemImage: "wand.and.stars") }
                 .tag(0)
             GalleryView()
@@ -33,9 +34,13 @@ struct RootView: View {
                 .tabItem { Label("Local", systemImage: "circle.hexagongrid.fill") }
                 .tag(3)
         }
-        .task { await app.refresh() }
+        .task { if destination == "pc" { await app.refresh() } }
+        .onChange(of: destination) { _, target in
+            if target == "pc" { Task { await app.refresh() } }
+        }
         .onChange(of: app.showCreate) { _, jump in
             if jump {
+                if app.mode == "edit" { destination = "pc" }
                 tab = 0
                 app.showCreate = false
             }

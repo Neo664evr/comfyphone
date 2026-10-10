@@ -106,7 +106,7 @@ struct CreateView: View {
                     .font(.caption.weight(.bold)).tracking(1.5)
                     .foregroundStyle(Color.accentColor)
                 Spacer()
-                Text("6.1").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("6.2").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             Text(app.mode == "edit" ? "A new take.\nYour photo." : "Your idea.\nMade visible.")
                 .font(.largeTitle.weight(.bold)).tracking(-1)

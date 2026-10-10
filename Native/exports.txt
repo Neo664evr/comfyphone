@@ -1,0 +1,8 @@
+_cpd_load
+_cpd_generate
+_cpd_unload
+_cpd_cancel
+_cpd_progress
+_cpd_status
+_cpd_available_memory
+_cpd_loaded

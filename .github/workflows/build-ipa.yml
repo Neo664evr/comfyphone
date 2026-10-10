@@ -62,6 +62,17 @@ jobs:
           echo "--- libs ---"; ls -la ../vendor-llama/lib
           echo "--- all built archives ---"; find build-ios -name "*.a" | head -30
 
+      - name: Cache native diffusion framework
+        id: diffusion-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor-diffusion
+          key: diffusion-ios-0e1d733-d25b121-bridge1
+
+      - name: Build native diffusion framework
+        if: steps.diffusion-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-diffusion.sh
+
       - name: Inject local config from secrets
         run: |
           set -euo pipefail

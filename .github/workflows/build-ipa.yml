@@ -18,6 +18,11 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i "ios" || true
 
+      - name: Test diffusion policies
+        run: |
+          swiftc Sources/DiffusionPolicy.swift Tests/DiffusionPolicyTests.swift -o "$RUNNER_TEMP/diffusion-tests"
+          "$RUNNER_TEMP/diffusion-tests"
+
       - name: Cache llama.cpp (iOS static libs)
         id: llama-cache
         uses: actions/cache@v4

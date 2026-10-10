@@ -37,7 +37,7 @@ final class AppState: ObservableObject {
     @Published var probes: [ProbeResult] = []
 
     // Job inputs
-    @Published var modelID: String = "zimage" { didSet { store(modelID, "modelID") } }
+    @Published var modelID: String = "qwen_turbo" { didSet { store(modelID, "modelID") } }
     @Published var prompt: String = "" { didSet { store(prompt, "prompt") } }
     @Published var negative: String = "" { didSet { store(negative, "negative") } }
     @Published var width: Int = 768 { didSet { store(width, "width") } }
@@ -101,7 +101,24 @@ final class AppState: ObservableObject {
         } else {
             token = d.string(forKey: "token") ?? AppState.defaultToken
         }
-        modelID = d.string(forKey: "modelID") ?? "zimage"
+        let savedModel = d.string(forKey: "modelID")
+        // 6.0 did not record explicit picks. Only migrate its untouched default;
+        // recipes or tuned inputs are evidence that the old choice was deliberate.
+        let hasRecipes = d.data(forKey: "history").flatMap {
+            try? JSONDecoder().decode([Recipe].self, from: $0)
+        }?.contains { $0.modelID == "zimage" } ?? false
+        let untouchedLegacy = savedModel == "zimage"
+            && !d.bool(forKey: "modelExplicitChoice") && !hasRecipes
+            && (d.object(forKey: "steps") as? Int ?? 8) == 8
+            && (d.object(forKey: "width") as? Int ?? 768) == 768
+            && (d.object(forKey: "height") as? Int ?? 768) == 768
+        if !d.bool(forKey: "turboDefaultMigration61") && untouchedLegacy {
+            modelID = "qwen_turbo"
+        } else {
+            modelID = savedModel ?? "qwen_turbo"
+        }
+        d.set(modelID, forKey: "modelID")
+        d.set(true, forKey: "turboDefaultMigration61")
         prompt = d.string(forKey: "prompt") ?? ""
         negative = d.string(forKey: "negative") ?? ""
         mode = d.string(forKey: "mode") ?? "create"
@@ -174,7 +191,9 @@ final class AppState: ObservableObject {
 
     var currentModel: ModelInfo? { models.first { $0.id == modelID } }
 
-    var modelDisplayName: String { currentModel?.name ?? modelID }
+    var modelDisplayName: String {
+        currentModel?.name ?? (modelID == "qwen_turbo" ? "Qwen-Image 2.1 Turbo" : modelID)
+    }
 
     // MARK: connection
 
@@ -225,7 +244,8 @@ final class AppState: ObservableObject {
 
     func select(model: ModelInfo) {
         applyDefaults(for: model)
-        if model.id == "qwen" || model.id == "qwen_stock" {
+        store(true, "modelExplicitChoice")
+        if model.id.hasPrefix("qwen") && model.id != "qwen_turbo" {
             width = 1024
             height = 1024
         }

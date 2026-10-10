@@ -15,41 +15,45 @@ struct CreateView: View {
     @FocusState private var composerFocused: Bool
     @State private var draft: String = ""
     @State private var negDraft: String = ""
+    @State private var showEngine = false
+    @State private var showReferences = false
+    @State private var checkingConnection = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    StatusBanner()
-
-                    tipsCard
-
-                    engineCard
-
+                    studioHeader
+                    connectionCard
                     modePicker
-
-                    photoCard
-
-                    styleRow
-
                     if app.mode != "edit" && !app.models.isEmpty {
                         modelPicker
                     }
-
                     promptBox
+                    if app.mode != "edit" { inspirationRow }
+                    styleRow
+                    outputCard
+                    DisclosureGroup("Reference photos", isExpanded: $showReferences) {
+                        photoCard
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .onChange(of: app.mode) { _, mode in
+                        if mode == "edit" { showReferences = true }
+                    }
 
                     Button(action: {
                         if app.phase.isBusy { app.cancel() } else { app.makeImage() }
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: app.phase.isBusy ? "stop.fill" : (app.mode == "edit" ? "wand.and.rays" : "sparkles"))
-                            Text(app.phase.isBusy ? "Cancel" : (app.mode == "edit" ? "Edit photo" : "Make image"))
+                            Text(app.phase.isBusy ? "Cancel generation" : (app.mode == "edit" ? "Edit photo" : "Generate image"))
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
-                        .background(app.phase.isBusy ? Color.red.opacity(0.85) : Color.accentColor,
-                                    in: RoundedRectangle(cornerRadius: 14))
+                        .background(LinearGradient(colors: app.phase.isBusy ? [.red, .red.opacity(0.7)] :
+                            [Color.accentColor, Color(red: 0.18, green: 0.42, blue: 0.85)],
+                            startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 18))
                         .foregroundStyle(.white)
                     }
                     .disabled(!app.phase.isBusy && ((app.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -57,12 +61,6 @@ struct CreateView: View {
                                                    || (app.mode == "edit" && app.references.isEmpty)))
                     .squishy(0.975)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: app.phase.isBusy)
-
-                    queueCard
-
-                    savedPromptsCard
-
-                    historyCard
 
                     progressSection
 
@@ -74,6 +72,10 @@ struct CreateView: View {
                     }
 
                     results
+                    queueCard
+                    savedPromptsCard
+                    historyCard
+                    tipsCard
 
                     DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
                         advancedControls
@@ -83,9 +85,11 @@ struct CreateView: View {
                 }
                 .padding(16)
             }
-            .navigationTitle("ComfyPhone")
+            .navigationTitle("Create")
+            .navigationBarTitleDisplayMode(.inline)
             .background(AppBackground())
             .scrollDismissesKeyboard(.interactively)
+            .onAppear { showReferences = app.mode == "edit" || !app.references.isEmpty }
             .toolbar { KeyboardDoneToolbar() }
             .sheet(isPresented: $sharing) {
                 ShareSheet(items: shareItems)
@@ -94,6 +98,120 @@ struct CreateView: View {
     }
 
     // MARK: pieces
+
+    private var studioHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("COMFYPHONE STUDIO", systemImage: "sparkles")
+                    .font(.caption.weight(.bold)).tracking(1.5)
+                    .foregroundStyle(Color.accentColor)
+                Spacer()
+                Text("6.1").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Text(app.mode == "edit" ? "A new take.\nYour photo." : "Your idea.\nMade visible.")
+                .font(.largeTitle.weight(.bold)).tracking(-1)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Compose on iPhone. Render on your PC.")
+                .font(.subheadline).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var connectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: app.reachable ? "desktopcomputer" : "wifi.slash")
+                    .font(.title3).foregroundStyle(app.reachable ? Color.accentColor : .orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(app.engineBusy != nil ? "Updating PC engine…" :
+                        (app.reachable ? (app.engineUp ? "Ready to render" : "PC online · engine asleep") : "Connect your PC"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(app.reachable ? "Image generation runs on your PC" : "Check your bridge and Tailscale connection")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    checkingConnection = true
+                    Task {
+                        await app.refresh()
+                        checkingConnection = false
+                    }
+                } label: {
+                    if checkingConnection { ProgressView() }
+                    else { Image(systemName: "arrow.clockwise").frame(width: 28, height: 32) }
+                }
+                .glassButton().disabled(checkingConnection)
+                .accessibilityLabel("Check PC connection")
+            }
+            if !app.reachable && app.statusLine != "Not checked yet" {
+                Text(app.statusLine).font(.caption2).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            DisclosureGroup("Engine controls", isExpanded: $showEngine) { engineCard }
+                .font(.caption.weight(.semibold))
+        }
+        .padding(16).glassCard()
+    }
+
+    private var inspirationRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("START WITH AN IDEA").font(.caption2.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PromptPreset.all) { preset in
+                        Button {
+                            app.prompt = preset.prompt
+                            Haptics.select()
+                        } label: {
+                            Label(preset.title, systemImage: preset.icon)
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12).padding(.vertical, 12)
+                        }
+                        .glassChip(selected: false).buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var outputCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Output", systemImage: "square.dashed").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(app.width) × \(app.height) · \(app.steps) steps")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            if app.mode != "edit" {
+                HStack(spacing: 10) {
+                    resolutionButton("Quick square", side: 768)
+                    resolutionButton("Detail square", side: 1024)
+                }
+                Text(app.modelDisplayName)
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Photo editing uses the existing Qwen edit pipeline; your photo's aspect ratio is preserved.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16).glassCard()
+    }
+
+    private func resolutionButton(_ title: String, side: Int) -> some View {
+        Button {
+            app.width = side
+            app.height = side
+            Haptics.select()
+        } label: {
+            VStack(spacing: 4) {
+                Text(title).font(.caption.weight(.semibold))
+                Text("\(side) × \(side)").font(.caption2.monospacedDigit())
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+        }
+        .glassChip(selected: app.width == side && app.height == side)
+        .buttonStyle(.plain)
+    }
 
     private var engineCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -206,6 +324,7 @@ struct CreateView: View {
 
     private var styleRow: some View {
         VStack(alignment: .leading, spacing: 7) {
+            ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 Text("Styles")
                     .font(.caption.weight(.semibold))
@@ -257,6 +376,7 @@ struct CreateView: View {
                 }
                 .glassButton()
                 .squishy()
+            }
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -391,9 +511,8 @@ struct CreateView: View {
     private var promptBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(app.mode == "edit" ? "What to change" : "Picture")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                Text(app.mode == "edit" ? "What should change?" : "Describe your vision")
+                    .font(.headline)
                 Spacer(minLength: 4)
                 if composerFocused {
                     Button {
@@ -415,12 +534,12 @@ struct CreateView: View {
                 }
                 TextEditor(text: $draft)
                     .focused($composerFocused)
-                    .frame(minHeight: 110)
+                    .frame(minHeight: 150)
                     .scrollContentBackground(.hidden)
             }
         }
-        .padding(10)
-        .glassCard()
+        .padding(16)
+        .glassCard(corner: 24)
         .onAppear { draft = app.prompt }
         // The editor keeps its own buffer: writing straight through to the published
         // prompt re-rendered the whole tab on every keystroke and dropped characters.
@@ -455,8 +574,11 @@ struct CreateView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                ProgressView(value: min(max(app.progress, 0), 1))
-                    .animation(.snappy(duration: 0.5), value: app.progress)
+                if app.stepsTotal != nil {
+                    ProgressView(value: min(max(app.progress, 0), 1))
+                } else {
+                    ProgressView()
+                }
                 HStack {
                     Text(app.jobNote.isEmpty ? (app.mode == "edit" ? "Editing your photo" : app.modelDisplayName) : app.jobNote)
                         .font(.caption).foregroundStyle(.secondary)

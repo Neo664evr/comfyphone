@@ -134,6 +134,10 @@ jobs:
           test -n "$APP"
           plutil -p "$APP/Info.plist" | head -40
           test -f "$APP/AppIcon60x60@2x.png" || echo "no icon (not fatal)"
+          if [ -f Support/ComfyPhone.entitlements ]; then
+            cp Support/ComfyPhone.entitlements "$APP/entitlements.xml"
+            echo "added entitlements.xml (increased-memory-limit, extended-virtual-addressing)"
+          fi
           rm -rf Payload ComfyPhone-unsigned.ipa
           mkdir Payload
           cp -R "$APP" Payload/
